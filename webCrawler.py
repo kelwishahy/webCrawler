@@ -1,4 +1,4 @@
-import requests, bs4, threading, time
+import requests, bs4, threading, time, re
 
 
 # FUNCTIONALITY
@@ -32,7 +32,9 @@ class crawler:
 
     def webSearch(self, query):
         # Match the given query to one of the available topics
-        self.query = crawler.match_query(query=query)
+        query = query.lower()
+        if query in self.topics:
+            self.query = query
 
         # Navigate to the requested topic page on www.bodybuilding.com
         self.url = self.url + self.query
@@ -76,30 +78,45 @@ class crawler:
         return exerciseSet
 
     def whatIs(self, query):
-        url = 'https://www.bodybuilding.com/exercises/' + query.lower()
-        res = requests.get(url)
+        self.query = query.lower().replace("-", " ")
+        exerciseLink = self.match_query(query)
+
+        res = requests.get(exerciseLink)
         res.raise_for_status()
 
         page = bs4.BeautifulSoup(res.text, features="html.parser")
         title = page.find('h2', class_='ExHeading ExHeading--h2 ExDetail-h2').text
-        video = page.find('video', class_='jw-video jw-reset')['src']
+        video = page.find(class_='ExVideo js-ex-video')['data-src']
         photo = page.find('img', class_='ExImg ExDetail-img js-ex-enlarge')['data-large-photo']
 
-        result = [url, photo, video, title]
+        result = [exerciseLink, photo, video, title]
 
         return result
-
     # --------------------------------------------------------------------------
 
     # Class methods, do not use externally
-    @classmethod
-    def match_query(cls, query):
+    def match_query(self, query):
         query = query.lower()
+        query = query.replace(" ", "+")
+        searchURL = 'https://www.bodybuilding.com/exercises/search?query=' + query
+        searchResult = requests.get(searchURL)
+        searchResult.raise_for_status()
+        searchResult = bs4.BeautifulSoup(searchResult.text, features="html.parser")
+        exercises = searchResult.find_all(class_="ExResult-row flexo-container flexo-between")
 
-        if query in cls.topics:
-            return query
-        else:
-            raise Exception('Query could not be matched')
+        for x in exercises:
+            title = x.find(class_='ExHeading ExResult-resultsHeading').find('a').text
+            u_title = title.lower()
+            u_title = u_title.replace("-", " ")
+            match = re.search(query.replace("+", " "), u_title)
+            if match != None:
+                print(match.group(0))
+                exercisePath = x.find(class_="ExResult-cell ExResult-cell--nameEtc").find('a')['href']
+                url = 'https://www.bodybuilding.com' + exercisePath
+                print(url)
+                return url
+
+            return None
 
     def findExercises(self, link):
         # Download the page
